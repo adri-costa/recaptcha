@@ -34,7 +34,6 @@ SCORE_COLUMNS = [
 
 def setup_logging(debug):
     level = logging.DEBUG if debug else logging.INFO
-
     logging.basicConfig(
         level=level,
         format="%(asctime)s | %(levelname)s | %(message)s"
@@ -83,7 +82,6 @@ def sanitize_dynamic_label(label):
     normalized = normalized.replace(".", "_")
     normalized = normalized.replace("\n", "_")
     normalized = normalized.replace("\t", "_")
-    normalized = normalized.replace("__", "_")
 
     safe_chars = []
     for ch in normalized:
@@ -92,8 +90,51 @@ def sanitize_dynamic_label(label):
         else:
             safe_chars.append("_")
 
-    normalized = "".join(safe_chars).strip("_")
+    normalized = "".join(safe_chars)
+
+    while "__" in normalized:
+        normalized = normalized.replace("__", "_")
+
+    normalized = normalized.strip("_")
+
     return normalized or "indefinido"
+
+
+def get_value(data, snake_key, camel_key=None, default=None):
+    if not isinstance(data, dict):
+        return default
+
+    if snake_key in data:
+        return data.get(snake_key, default)
+
+    if camel_key and camel_key in data:
+        return data.get(camel_key, default)
+
+    return default
+
+
+def parse_datetime(value):
+    if not value:
+        return None
+
+    if isinstance(value, datetime):
+        return value
+
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except Exception:
+        return None
+
+
+def get_date_range(days):
+    today = datetime.now(timezone.utc).date()
+    start_date = today - timedelta(days=days - 1)
+
+    dates = []
+    for i in range(days):
+        dates.append((start_date + timedelta(days=i)).strftime("%Y-%m-%d"))
+
+    return dates
 
 
 def get_key_metadata(key, project_id):
@@ -169,7 +210,7 @@ def read_point_value(point):
         return 0
 
 
-def query_metric_sum(client, project_id, metric_type, key_id, days_back, extra_filter=""):
+def query_metric_daily_sum(client, project_id, metric_type, key_id, days_back, extra_filter=""):
     project_name = f"projects/{project_id}"
     interval = build_interval(days_back)
 
@@ -179,10 +220,12 @@ def query_metric_sum(client, project_id, metric_type, key_id, days_back, extra_f
         filter_str += f" AND ({extra_filter})"
 
     aggregation = monitoring_v3.Aggregation({
-        "alignment_period": timedelta(days=days_back),
+        "alignment_period": timedelta(days=1),
         "per_series_aligner": monitoring_v3.Aggregation.Aligner.ALIGN_SUM,
         "cross_series_reducer": monitoring_v3.Aggregation.Reducer.REDUCE_SUM,
     })
+
+    results_dict = {}
 
     try:
         results = client.list_time_series(
@@ -195,29 +238,29 @@ def query_metric_sum(client, project_id, metric_type, key_id, days_back, extra_f
             }
         )
 
-        total = 0
-
         for series in results:
             for point in series.points:
-                total += read_point_value(point)
+                date_str = point.interval.end_time.strftime("%Y-%m-%d")
+                val = read_point_value(point)
+                results_dict[date_str] = results_dict.get(date_str, 0) + val
 
-        return int(total)
+        return results_dict
 
     except PermissionDenied as e:
-        logging.error("Permissão negada ao consultar métrica %s no projeto %s / key %s: %s", metric_type, project_id, key_id, e)
-        return 0
+        logging.error("Permissão negada ao consultar métrica diária %s no projeto %s / key %s: %s", metric_type, project_id, key_id, e)
+        return {}
 
     except NotFound as e:
         logging.error("Métrica/projeto não encontrado: %s | projeto=%s | key=%s | erro=%s", metric_type, project_id, key_id, e)
-        return 0
+        return {}
 
     except GoogleAPICallError as e:
-        logging.error("Erro Google API ao consultar métrica %s no projeto %s / key %s: %s", metric_type, project_id, key_id, e)
-        return 0
+        logging.error("Erro Google API ao consultar métrica diária %s no projeto %s / key %s: %s", metric_type, project_id, key_id, e)
+        return {}
 
     except Exception as e:
-        logging.exception("Erro inesperado ao consultar métrica %s no projeto %s / key %s: %s", metric_type, project_id, key_id, e)
-        return 0
+        logging.exception("Erro inesperado ao consultar métrica diária %s no projeto %s / key %s: %s", metric_type, project_id, key_id, e)
+        return {}
 
 
 def query_monitoring_daily_labels(client, project_id, metric_type, key_id, days_back):
@@ -292,7 +335,6 @@ def get_sdk_metrics(recaptcha_client, key_name):
         )
 
         metrics_pb = recaptcha_client.get_metrics(request=request)
-
         return recaptchaenterprise_v1.Metrics.to_dict(metrics_pb)
 
     except PermissionDenied as e:
@@ -312,52 +354,53 @@ def get_sdk_metrics(recaptcha_client, key_name):
         return {}
 
 
-def calculate_summary_metrics(monitoring_client, project_id, site_key, integration_type, days):
+def extract_score_metrics_by_date(sdk_metrics):
+    score_by_date = {}
+
+    score_metrics = get_value(sdk_metrics, "score_metrics", "scoreMetrics", [])
+    start_time_raw = get_value(sdk_metrics, "start_time", "startTime", "")
+
+    base_date = parse_datetime(start_time_raw)
+
+    if not base_date:
+        base_date = datetime.now(timezone.utc) - timedelta(days=90)
+
+    for i, day_data in enumerate(score_metrics):
+        dt_obj = base_date + timedelta(days=i)
+        date_str = dt_obj.strftime("%Y-%m-%d")
+
+        overall_metrics = get_value(day_data, "overall_metrics", "overallMetrics", {})
+        buckets = get_value(overall_metrics, "score_buckets", "scoreBuckets", {})
+
+        score_by_date[date_str] = buckets or {}
+
+    return score_by_date
+
+
+def build_daily_metrics(monitoring_client, project_id, site_key, days):
     m_assess_labels = "recaptchaenterprise.googleapis.com/assessments"
     m_assess_count = "recaptchaenterprise.googleapis.com/assessment_count"
     m_exec = "recaptchaenterprise.googleapis.com/executes"
     m_sms = "recaptchaenterprise.googleapis.com/sms_toll_fraud_risks"
 
-    total_assess = query_metric_sum(
-        monitoring_client,
-        project_id,
-        m_assess_count,
-        site_key,
-        days
-    )
+    return {
+        "enterprise_assessments": query_metric_daily_sum(
+            monitoring_client,
+            project_id,
+            m_assess_count,
+            site_key,
+            days
+        ),
 
-    executes = query_metric_sum(
-        monitoring_client,
-        project_id,
-        m_exec,
-        site_key,
-        days
-    )
+        "executes": query_metric_daily_sum(
+            monitoring_client,
+            project_id,
+            m_exec,
+            site_key,
+            days
+        ),
 
-    challenged_sessions = query_metric_sum(
-        monitoring_client,
-        project_id,
-        m_assess_labels,
-        site_key,
-        days,
-        'metric.labels.challenge = "challenge"'
-    )
-
-    errors = query_metric_sum(
-        monitoring_client,
-        project_id,
-        m_assess_count,
-        site_key,
-        days,
-        'metric.labels.token_status != "valid"'
-    )
-
-    summary = {
-        "consumer_assessments": 0,
-        "enterprise_assessments": total_assess,
-        "executes": executes,
-
-        "gcp_assessments": query_metric_sum(
+        "gcp_assessments": query_metric_daily_sum(
             monitoring_client,
             project_id,
             m_assess_labels,
@@ -366,7 +409,7 @@ def calculate_summary_metrics(monitoring_client, project_id, site_key, integrati
             'metric.labels.platform = "web"'
         ),
 
-        "non_gcp_assessments": query_metric_sum(
+        "non_gcp_assessments": query_metric_daily_sum(
             monitoring_client,
             project_id,
             m_assess_labels,
@@ -375,7 +418,7 @@ def calculate_summary_metrics(monitoring_client, project_id, site_key, integrati
             'metric.labels.platform != "web"'
         ),
 
-        "mobile_sdk_assessments": query_metric_sum(
+        "mobile_sdk_assessments": query_metric_daily_sum(
             monitoring_client,
             project_id,
             m_assess_labels,
@@ -384,15 +427,16 @@ def calculate_summary_metrics(monitoring_client, project_id, site_key, integrati
             'metric.labels.platform = "android" OR metric.labels.platform = "ios"'
         ),
 
-        "v2_web_assessments_estimated": total_assess if integration_type in ["CHECKBOX", "INVISIBLE"] else 0,
-        "v3_web_assessments_estimated": total_assess if integration_type == "SCORE" else 0,
+        "challenged_sessions": query_metric_daily_sum(
+            monitoring_client,
+            project_id,
+            m_assess_labels,
+            site_key,
+            days,
+            'metric.labels.challenge = "challenge"'
+        ),
 
-        "v2_pbc_assessments": 0,
-        "challenged_sessions": challenged_sessions,
-        "challenged_sessions_no_assessments": 0,
-        "payment_fraud_assessments": 0,
-
-        "smsd_assessments": query_metric_sum(
+        "smsd_assessments": query_metric_daily_sum(
             monitoring_client,
             project_id,
             m_sms,
@@ -400,24 +444,63 @@ def calculate_summary_metrics(monitoring_client, project_id, site_key, integrati
             days
         ),
 
-        "errors": errors,
+        "errors": query_metric_daily_sum(
+            monitoring_client,
+            project_id,
+            m_assess_count,
+            site_key,
+            days,
+            'metric.labels.token_status != "valid"'
+        ),
     }
 
-    summary["error_rate"] = safe_divide(errors, total_assess)
-    summary["challenge_rate"] = safe_divide(challenged_sessions, total_assess)
-    summary["execute_to_assessment_rate"] = safe_divide(executes, total_assess)
 
-    return summary
+def get_daily_value(metrics_by_name, metric_name, date_str):
+    metric = metrics_by_name.get(metric_name, {})
+    return int(metric.get(date_str, 0) or 0)
 
 
-def build_score_row(metadata, summary_metrics, date_str, buckets):
+def build_daily_row(metadata, daily_metrics, date_str, buckets, extraction_timestamp, days):
+    integration_type = metadata.get("integration_type", "N/A")
+
+    enterprise_assessments = get_daily_value(daily_metrics, "enterprise_assessments", date_str)
+    executes = get_daily_value(daily_metrics, "executes", date_str)
+    gcp_assessments = get_daily_value(daily_metrics, "gcp_assessments", date_str)
+    non_gcp_assessments = get_daily_value(daily_metrics, "non_gcp_assessments", date_str)
+    mobile_sdk_assessments = get_daily_value(daily_metrics, "mobile_sdk_assessments", date_str)
+    challenged_sessions = get_daily_value(daily_metrics, "challenged_sessions", date_str)
+    smsd_assessments = get_daily_value(daily_metrics, "smsd_assessments", date_str)
+    errors = get_daily_value(daily_metrics, "errors", date_str)
+
     row = {}
 
     row.update(metadata)
-    row.update(summary_metrics)
 
+    row["extraction_timestamp"] = extraction_timestamp
+    row["report_days"] = days
+    row["record_type"] = "daily_key_metric"
     row["date"] = date_str
-    row["record_type"] = "daily_score_metric"
+
+    row["consumer_assessments"] = 0
+    row["enterprise_assessments"] = enterprise_assessments
+    row["executes"] = executes
+    row["gcp_assessments"] = gcp_assessments
+    row["non_gcp_assessments"] = non_gcp_assessments
+    row["mobile_sdk_assessments"] = mobile_sdk_assessments
+
+    row["v2_web_assessments_estimated"] = enterprise_assessments if integration_type in ["CHECKBOX", "INVISIBLE"] else 0
+    row["v3_web_assessments_estimated"] = enterprise_assessments if integration_type == "SCORE" else 0
+
+    row["v2_pbc_assessments"] = 0
+    row["challenged_sessions"] = challenged_sessions
+    row["challenged_sessions_no_assessments"] = 0
+    row["payment_fraud_assessments"] = 0
+    row["smsd_assessments"] = smsd_assessments
+    row["errors"] = errors
+
+    row["error_rate"] = safe_divide(errors, enterprise_assessments)
+    row["challenge_rate"] = safe_divide(challenged_sessions, enterprise_assessments)
+    row["execute_to_assessment_rate"] = safe_divide(executes, enterprise_assessments)
 
     row["score_0.0"] = buckets.get("0", 0)
     row["score_0.1"] = buckets.get("10", 0)
@@ -443,39 +526,13 @@ def build_score_row(metadata, summary_metrics, date_str, buckets):
         int(v) for v in buckets.values()
     )
 
+    row["total_score_evals"] = total_score_evals
     row["threats_score_0_0_to_0_4"] = threats
     row["legitimate_score_0_5_to_1_0"] = legitimate
-    row["total_score_evals"] = total_score_evals
-
     row["threat_rate"] = safe_divide(threats, total_score_evals)
     row["legitimate_rate"] = safe_divide(legitimate, total_score_evals)
     row["score_low_ratio"] = safe_divide(threats, total_score_evals)
     row["score_high_ratio"] = safe_divide(legitimate, total_score_evals)
-
-    return row
-
-
-def build_summary_only_row(metadata, summary_metrics, extraction_timestamp, days):
-    row = {}
-
-    row.update(metadata)
-    row.update(summary_metrics)
-
-    row["date"] = ""
-    row["record_type"] = "summary_only"
-    row["extraction_timestamp"] = extraction_timestamp
-    row["report_days"] = days
-
-    for score_col in SCORE_COLUMNS:
-        row[score_col] = 0
-
-    row["total_score_evals"] = 0
-    row["threats_score_0_0_to_0_4"] = 0
-    row["legitimate_score_0_5_to_1_0"] = 0
-    row["threat_rate"] = 0
-    row["legitimate_rate"] = 0
-    row["score_low_ratio"] = 0
-    row["score_high_ratio"] = 0
 
     return row
 
@@ -522,11 +579,13 @@ def main():
     dynamic_columns = set()
 
     extraction_timestamp = datetime.now(timezone.utc).isoformat()
+    date_range = get_date_range(args.days)
 
     logging.info("Iniciando extração")
     logging.info("Projetos: %s", args.projects)
     logging.info("Período: últimos %s dias", args.days)
     logging.info("Arquivo de saída: %s", args.output)
+    logging.info("Modelo de saída: 1 linha por chave por dia")
 
     for project_id in args.projects:
         logging.info("Processando projeto: %s", project_id)
@@ -561,17 +620,18 @@ def main():
                 metadata["site_key"]
             )
 
-            summary_metrics = calculate_summary_metrics(
-                monitoring_client,
-                metadata["project_id"],
-                metadata["site_key"],
-                metadata["integration_type"],
-                args.days
-            )
-
             sdk_metrics = get_sdk_metrics(
                 recaptcha_client,
                 metadata["key_name"]
+            )
+
+            score_by_date = extract_score_metrics_by_date(sdk_metrics)
+
+            daily_metrics = build_daily_metrics(
+                monitoring_client,
+                metadata["project_id"],
+                metadata["site_key"],
+                args.days
             )
 
             defender_metrics = query_monitoring_daily_labels(
@@ -590,44 +650,17 @@ def main():
                 args.days
             )
 
-            score_metrics = sdk_metrics.get("scoreMetrics", [])
-            start_time_str = sdk_metrics.get("startTime", "")
+            for date_str in date_range:
+                buckets = score_by_date.get(date_str, {})
 
-            if start_time_str:
-                try:
-                    base_date = datetime.fromisoformat(
-                        start_time_str.replace("Z", "+00:00")
-                    )
-                except ValueError:
-                    logging.warning(
-                        "startTime inválido para chave %s: %s",
-                        metadata["site_key"],
-                        start_time_str
-                    )
-                    base_date = datetime.now(timezone.utc) - timedelta(days=90)
-            else:
-                base_date = datetime.now(timezone.utc) - timedelta(days=90)
-
-            rows_added_for_key = 0
-
-            for i, day_data in enumerate(score_metrics):
-                dt_obj = base_date + timedelta(days=i)
-
-                if dt_obj < (datetime.now(timezone.utc) - timedelta(days=args.days)):
-                    continue
-
-                date_str = dt_obj.strftime("%Y-%m-%d")
-                buckets = day_data.get("overallMetrics", {}).get("scoreBuckets", {})
-
-                row = build_score_row(
+                row = build_daily_row(
                     metadata,
-                    summary_metrics,
+                    daily_metrics,
                     date_str,
-                    buckets
+                    buckets,
+                    extraction_timestamp,
+                    args.days
                 )
-
-                row["extraction_timestamp"] = extraction_timestamp
-                row["report_days"] = args.days
 
                 for (d, label), val in defender_metrics.items():
                     if d == date_str:
@@ -642,22 +675,6 @@ def main():
                         col_name = f"erro_{sanitized}"
                         row[col_name] = val
                         dynamic_columns.add(col_name)
-
-                all_rows.append(row)
-                rows_added_for_key += 1
-
-            if rows_added_for_key == 0:
-                logging.warning(
-                    "Nenhuma linha diária de score encontrada para chave %s. Criando linha summary_only.",
-                    metadata["site_key"]
-                )
-
-                row = build_summary_only_row(
-                    metadata,
-                    summary_metrics,
-                    extraction_timestamp,
-                    args.days
-                )
 
                 all_rows.append(row)
 
