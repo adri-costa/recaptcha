@@ -32,6 +32,27 @@ SCORE_COLUMNS = [
 ]
 
 
+REASON_COLUMNS = [
+    "motivo_indefinido",
+    "motivo_profile_match",
+    "motivo_suspicious_login_activity",
+    "motivo_suspicious_account_creation",
+    "motivo_related_accounts_number_high",
+]
+
+
+ERROR_COLUMNS = [
+    "erro_indefinido",
+    "erro_invalid",
+    "erro_expired",
+    "erro_dupe",
+    "erro_missing",
+    "erro_malformed",
+    "erro_browser_error",
+    "erro_unknown_invalid_reason",
+]
+
+
 def setup_logging(debug):
     level = logging.DEBUG if debug else logging.INFO
     logging.basicConfig(
@@ -725,7 +746,16 @@ def main():
         "score_high_ratio",
     ]
 
-    final_columns = base_columns + SCORE_COLUMNS + sorted(dynamic_columns)
+    known_dynamic_columns = set(REASON_COLUMNS + ERROR_COLUMNS)
+    extra_dynamic_columns = sorted(dynamic_columns - known_dynamic_columns)
+
+    final_columns = (
+        base_columns
+        + SCORE_COLUMNS
+        + REASON_COLUMNS
+        + ERROR_COLUMNS
+        + extra_dynamic_columns
+    )
 
     logging.info("Gravando %s linhas em %s", len(all_rows), args.output)
 
