@@ -7,7 +7,6 @@ from datetime import datetime, timedelta, timezone
 
 from google.cloud import recaptchaenterprise_v1
 from google.cloud import monitoring_v3
-from google.protobuf.json_format import MessageToDict
 from google.protobuf import timestamp_pb2
 from google.api_core.exceptions import GoogleAPICallError, PermissionDenied, NotFound
 
@@ -293,7 +292,8 @@ def get_sdk_metrics(recaptcha_client, key_name):
         )
 
         metrics_pb = recaptcha_client.get_metrics(request=request)
-        return MessageToDict(metrics_pb)
+
+        return recaptchaenterprise_v1.Metrics.to_dict(metrics_pb)
 
     except PermissionDenied as e:
         logging.error("Permissão negada ao executar GetMetrics para %s: %s", key_name, e)
@@ -482,7 +482,7 @@ def build_summary_only_row(metadata, summary_metrics, extraction_timestamp, days
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Unified quick-win Google reCAPTCHA Enterprise CSV report"
+        description="SegAplic Google reCAPTCHA Enterprise CSV report"
     )
 
     parser.add_argument(
@@ -501,7 +501,7 @@ def main():
 
     parser.add_argument(
         "--output",
-        default="recaptcha_unified_quickwin.csv",
+        default="recaptcha_data_export.csv",
         help="Output CSV file"
     )
 
@@ -523,7 +523,7 @@ def main():
 
     extraction_timestamp = datetime.now(timezone.utc).isoformat()
 
-    logging.info("Iniciando extração unificada")
+    logging.info("Iniciando extração")
     logging.info("Projetos: %s", args.projects)
     logging.info("Período: últimos %s dias", args.days)
     logging.info("Arquivo de saída: %s", args.output)
@@ -728,7 +728,7 @@ def main():
 
             writer.writerow(row)
 
-    logging.info("CSV unificado gerado com sucesso: %s", args.output)
+    logging.info("CSV gerado com sucesso: %s", args.output)
     logging.info("Total de linhas: %s", len(all_rows))
 
 
