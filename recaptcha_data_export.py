@@ -18,17 +18,8 @@ DEFAULT_PROJECTS = [
 
 
 SCORE_COLUMNS = [
-    "score_0.0",
-    "score_0.1",
-    "score_0.2",
-    "score_0.3",
-    "score_0.4",
-    "score_0.5",
-    "score_0.6",
-    "score_0.7",
-    "score_0.8",
-    "score_0.9",
-    "score_1.0",
+    "score_0.0", "score_0.1", "score_0.2", "score_0.3", "score_0.4",
+    "score_0.5", "score_0.6", "score_0.7", "score_0.8", "score_0.9", "score_1.0",
 ]
 
 
@@ -142,7 +133,13 @@ def parse_datetime(value):
         return value
 
     try:
-        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+
+        return parsed
+
     except Exception:
         return None
 
@@ -151,11 +148,23 @@ def get_date_range(days):
     today = datetime.now(timezone.utc).date()
     start_date = today - timedelta(days=days - 1)
 
-    dates = []
-    for i in range(days):
-        dates.append((start_date + timedelta(days=i)).strftime("%Y-%m-%d"))
+    return [
+        (start_date + timedelta(days=i)).strftime("%Y-%m-%d")
+        for i in range(days)
+    ]
 
-    return dates
+
+def get_protection_model(integration_type):
+    if integration_type in ["CHECKBOX", "INVISIBLE"]:
+        return "CHALLENGE"
+
+    if integration_type == "SCORE":
+        return "SCORE_BASED"
+
+    if integration_type == "MOBILE":
+        return "MOBILE"
+
+    return "OTHER"
 
 
 def get_key_metadata(key, project_id):
@@ -163,25 +172,35 @@ def get_key_metadata(key, project_id):
     site_key = key_name.split("/")[-1]
 
     display_name = getattr(key, "display_name", "")
-    create_time = proto_datetime_to_string(getattr(key, "create_time", ""))
+    create_time = proto_datetime_to_string(getattr(key, "create_time", None))
+    created_dt = parse_datetime(create_time)
+
+    key_age_days = 0
+    if created_dt:
+        key_age_days = (datetime.now(timezone.utc) - created_dt).days
+
+    labels = dict(getattr(key, "labels", {}))
+
+    allowed_domains = []
+    top_domain = "N/A"
+
+    try:
+        if key.web_settings and key.web_settings.allowed_domains:
+            allowed_domains = list(key.web_settings.allowed_domains)
+            top_domain = allowed_domains[0] if allowed_domains else "N/A"
+    except Exception as e:
+        logging.warning("Falha ao extrair allowed_domains da chave %s: %s", key_name, e)
 
     integration_type = "N/A"
-    top_domain = ""
     waf_type = "NONE"
 
     try:
         if key.web_settings:
             integration_type = enum_to_string(key.web_settings.integration_type)
-
-            if key.web_settings.allowed_domains:
-                top_domain = key.web_settings.allowed_domains[0]
-
         elif key.android_settings or key.ios_settings:
             integration_type = "MOBILE"
-            top_domain = "N/A"
-
     except Exception as e:
-        logging.warning("Falha ao extrair web/mobile settings da chave %s: %s", key_name, e)
+        logging.warning("Falha ao extrair tipo de integração da chave %s: %s", key_name, e)
 
     try:
         if key.waf_settings:
@@ -189,15 +208,21 @@ def get_key_metadata(key, project_id):
     except Exception as e:
         logging.warning("Falha ao extrair waf_settings da chave %s: %s", key_name, e)
 
+    protection_model = get_protection_model(integration_type)
+
     return {
         "project_id": project_id,
         "key_name": key_name,
         "display_name": display_name,
         "site_key": site_key,
         "integration_type": integration_type,
+        "protection_model": protection_model,
         "top_domain": top_domain,
+        "allowed_domains": ",".join(allowed_domains) if allowed_domains else "N/A",
         "waf_type": waf_type,
         "created": create_time,
+        "key_age_days": key_age_days,
+        "labels": ";".join([f"{k}={v}" for k, v in labels.items()]) if labels else "N/A",
     }
 
 
@@ -220,7 +245,7 @@ def build_interval(days_back):
 
 def read_point_value(point):
     try:
-        if point.value.distribution_value.count:
+        if hasattr(point.value, "distribution_value") and point.value.distribution_value.count:
             return int(point.value.distribution_value.count)
     except Exception:
         pass
@@ -268,19 +293,31 @@ def query_metric_daily_sum(client, project_id, metric_type, key_id, days_back, e
         return results_dict
 
     except PermissionDenied as e:
-        logging.error("Permissão negada ao consultar métrica diária %s no projeto %s / key %s: %s", metric_type, project_id, key_id, e)
+        logging.error(
+            "Permissão negada ao consultar métrica diária %s no projeto %s / key %s: %s",
+            metric_type, project_id, key_id, e
+        )
         return {}
 
     except NotFound as e:
-        logging.error("Métrica/projeto não encontrado: %s | projeto=%s | key=%s | erro=%s", metric_type, project_id, key_id, e)
+        logging.error(
+            "Métrica/projeto não encontrado: %s | projeto=%s | key=%s | erro=%s",
+            metric_type, project_id, key_id, e
+        )
         return {}
 
     except GoogleAPICallError as e:
-        logging.error("Erro Google API ao consultar métrica diária %s no projeto %s / key %s: %s", metric_type, project_id, key_id, e)
+        logging.error(
+            "Erro Google API ao consultar métrica diária %s no projeto %s / key %s: %s",
+            metric_type, project_id, key_id, e
+        )
         return {}
 
     except Exception as e:
-        logging.exception("Erro inesperado ao consultar métrica diária %s no projeto %s / key %s: %s", metric_type, project_id, key_id, e)
+        logging.exception(
+            "Erro inesperado ao consultar métrica diária %s no projeto %s / key %s: %s",
+            metric_type, project_id, key_id, e
+        )
         return {}
 
 
@@ -309,19 +346,13 @@ def query_monitoring_daily_labels(client, project_id, metric_type, key_id, days_
         )
 
         for series in results:
-            label_val = ""
-
-            if "reason" in series.metric.labels:
-                label_val = series.metric.labels["reason"]
-
-            elif "label" in series.metric.labels:
-                label_val = series.metric.labels["label"]
-
-            elif "token_status" in series.metric.labels:
-                label_val = series.metric.labels["token_status"]
-
-            elif "challenge" in series.metric.labels:
-                label_val = series.metric.labels["challenge"]
+            label_val = (
+                series.metric.labels.get("reason")
+                or series.metric.labels.get("label")
+                or series.metric.labels.get("token_status")
+                or series.metric.labels.get("challenge")
+                or "indefinido"
+            )
 
             for point in series.points:
                 date_str = point.interval.end_time.strftime("%Y-%m-%d")
@@ -333,19 +364,31 @@ def query_monitoring_daily_labels(client, project_id, metric_type, key_id, days_
         return results_dict
 
     except PermissionDenied as e:
-        logging.error("Permissão negada ao consultar labels da métrica %s no projeto %s / key %s: %s", metric_type, project_id, key_id, e)
+        logging.error(
+            "Permissão negada ao consultar labels da métrica %s no projeto %s / key %s: %s",
+            metric_type, project_id, key_id, e
+        )
         return {}
 
     except NotFound as e:
-        logging.error("Métrica/projeto não encontrado: %s | projeto=%s | key=%s | erro=%s", metric_type, project_id, key_id, e)
+        logging.error(
+            "Métrica/projeto não encontrado ao consultar labels: %s | projeto=%s | key=%s | erro=%s",
+            metric_type, project_id, key_id, e
+        )
         return {}
 
     except GoogleAPICallError as e:
-        logging.error("Erro Google API ao consultar labels da métrica %s no projeto %s / key %s: %s", metric_type, project_id, key_id, e)
+        logging.error(
+            "Erro Google API ao consultar labels da métrica %s no projeto %s / key %s: %s",
+            metric_type, project_id, key_id, e
+        )
         return {}
 
     except Exception as e:
-        logging.exception("Erro inesperado ao consultar labels da métrica %s no projeto %s / key %s: %s", metric_type, project_id, key_id, e)
+        logging.exception(
+            "Erro inesperado ao consultar labels da métrica %s no projeto %s / key %s: %s",
+            metric_type, project_id, key_id, e
+        )
         return {}
 
 
@@ -393,9 +436,38 @@ def extract_score_metrics_by_date(sdk_metrics):
         overall_metrics = get_value(day_data, "overall_metrics", "overallMetrics", {})
         buckets = get_value(overall_metrics, "score_buckets", "scoreBuckets", {})
 
-        score_by_date[date_str] = buckets or {}
+        normalized_buckets = {}
+        for k, v in (buckets or {}).items():
+            normalized_buckets[str(k)] = v
+
+        score_by_date[date_str] = normalized_buckets
 
     return score_by_date
+
+
+def extract_challenge_metrics_by_date(sdk_metrics):
+    challenge_by_date = {}
+
+    challenge_metrics_list = get_value(sdk_metrics, "challenge_metrics", "challengeMetrics", [])
+    start_time_raw = get_value(sdk_metrics, "start_time", "startTime", "")
+
+    base_date = parse_datetime(start_time_raw)
+
+    if not base_date:
+        base_date = datetime.now(timezone.utc) - timedelta(days=90)
+
+    for i, day_data in enumerate(challenge_metrics_list):
+        dt_obj = base_date + timedelta(days=i)
+        date_str = dt_obj.strftime("%Y-%m-%d")
+
+        challenge_by_date[date_str] = {
+            "pageload_count": get_value(day_data, "pageload_count", "pageloadCount", 0),
+            "nocaptcha_count": get_value(day_data, "nocaptcha_count", "nocaptchaCount", 0),
+            "failed_count": get_value(day_data, "failed_count", "failedCount", 0),
+            "passed_count": get_value(day_data, "passed_count", "passedCount", 0),
+        }
+
+    return challenge_by_date
 
 
 def build_daily_metrics(monitoring_client, project_id, site_key, days):
@@ -406,71 +478,32 @@ def build_daily_metrics(monitoring_client, project_id, site_key, days):
 
     return {
         "enterprise_assessments": query_metric_daily_sum(
-            monitoring_client,
-            project_id,
-            m_assess_count,
-            site_key,
-            days
+            monitoring_client, project_id, m_assess_count, site_key, days
         ),
-
         "executes": query_metric_daily_sum(
-            monitoring_client,
-            project_id,
-            m_exec,
-            site_key,
-            days
+            monitoring_client, project_id, m_exec, site_key, days
         ),
-
         "gcp_assessments": query_metric_daily_sum(
-            monitoring_client,
-            project_id,
-            m_assess_labels,
-            site_key,
-            days,
+            monitoring_client, project_id, m_assess_labels, site_key, days,
             'metric.labels.platform = "web"'
         ),
-
         "non_gcp_assessments": query_metric_daily_sum(
-            monitoring_client,
-            project_id,
-            m_assess_labels,
-            site_key,
-            days,
+            monitoring_client, project_id, m_assess_labels, site_key, days,
             'metric.labels.platform != "web"'
         ),
-
         "mobile_sdk_assessments": query_metric_daily_sum(
-            monitoring_client,
-            project_id,
-            m_assess_labels,
-            site_key,
-            days,
+            monitoring_client, project_id, m_assess_labels, site_key, days,
             'metric.labels.platform = "android" OR metric.labels.platform = "ios"'
         ),
-
         "challenged_sessions": query_metric_daily_sum(
-            monitoring_client,
-            project_id,
-            m_assess_labels,
-            site_key,
-            days,
+            monitoring_client, project_id, m_assess_labels, site_key, days,
             'metric.labels.challenge = "challenge"'
         ),
-
         "smsd_assessments": query_metric_daily_sum(
-            monitoring_client,
-            project_id,
-            m_sms,
-            site_key,
-            days
+            monitoring_client, project_id, m_sms, site_key, days
         ),
-
         "errors": query_metric_daily_sum(
-            monitoring_client,
-            project_id,
-            m_assess_count,
-            site_key,
-            days,
+            monitoring_client, project_id, m_assess_count, site_key, days,
             'metric.labels.token_status != "valid"'
         ),
     }
@@ -481,8 +514,19 @@ def get_daily_value(metrics_by_name, metric_name, date_str):
     return int(metric.get(date_str, 0) or 0)
 
 
-def build_daily_row(metadata, daily_metrics, date_str, buckets, extraction_timestamp, days):
+def build_daily_row(
+    metadata,
+    daily_metrics,
+    date_str,
+    score_buckets,
+    challenge_data,
+    defender_metrics,
+    status_metrics,
+    extraction_timestamp,
+    days
+):
     integration_type = metadata.get("integration_type", "N/A")
+    protection_model = metadata.get("protection_model", "OTHER")
 
     enterprise_assessments = get_daily_value(daily_metrics, "enterprise_assessments", date_str)
     executes = get_daily_value(daily_metrics, "executes", date_str)
@@ -493,74 +537,112 @@ def build_daily_row(metadata, daily_metrics, date_str, buckets, extraction_times
     smsd_assessments = get_daily_value(daily_metrics, "smsd_assessments", date_str)
     errors = get_daily_value(daily_metrics, "errors", date_str)
 
-    row = {}
+    row = dict(metadata)
 
-    row.update(metadata)
+    row.update({
+        "extraction_timestamp": extraction_timestamp,
+        "report_days": days,
+        "record_type": "daily_key_metric",
+        "date": date_str,
 
-    row["extraction_timestamp"] = extraction_timestamp
-    row["report_days"] = days
-    row["record_type"] = "daily_key_metric"
-    row["date"] = date_str
+        "protection_model": protection_model,
 
-    row["consumer_assessments"] = 0
-    row["enterprise_assessments"] = enterprise_assessments
-    row["executes"] = executes
-    row["gcp_assessments"] = gcp_assessments
-    row["non_gcp_assessments"] = non_gcp_assessments
-    row["mobile_sdk_assessments"] = mobile_sdk_assessments
+        "consumer_assessments": 0,
+        "enterprise_assessments": enterprise_assessments,
+        "total_assessments": enterprise_assessments,
 
-    row["v2_web_assessments_estimated"] = enterprise_assessments if integration_type in ["CHECKBOX", "INVISIBLE"] else 0
-    row["v3_web_assessments_estimated"] = enterprise_assessments if integration_type == "SCORE" else 0
+        "executes": executes,
+        "gcp_assessments": gcp_assessments,
+        "non_gcp_assessments": non_gcp_assessments,
+        "mobile_sdk_assessments": mobile_sdk_assessments,
 
-    row["v2_pbc_assessments"] = 0
-    row["challenged_sessions"] = challenged_sessions
-    row["challenged_sessions_no_assessments"] = 0
-    row["payment_fraud_assessments"] = 0
-    row["smsd_assessments"] = smsd_assessments
-    row["errors"] = errors
+        "v2_web_assessments_estimated": enterprise_assessments if integration_type in ["CHECKBOX", "INVISIBLE"] else 0,
 
-    row["error_rate"] = safe_divide(errors, enterprise_assessments)
-    row["challenge_rate"] = safe_divide(challenged_sessions, enterprise_assessments)
-    row["execute_to_assessment_rate"] = safe_divide(executes, enterprise_assessments)
+        # Placeholder mantido por compatibilidade histórica.
+        # Legacy / Private Beta Captcha. Não representa dado real nesta versão.
+        "v2_pbc_assessments": 0,
 
-    row["score_0.0"] = buckets.get("0", 0)
-    row["score_0.1"] = buckets.get("10", 0)
-    row["score_0.2"] = buckets.get("20", 0)
-    row["score_0.3"] = buckets.get("30", 0)
-    row["score_0.4"] = buckets.get("40", 0)
-    row["score_0.5"] = buckets.get("50", 0)
-    row["score_0.6"] = buckets.get("60", 0)
-    row["score_0.7"] = buckets.get("70", 0)
-    row["score_0.8"] = buckets.get("80", 0)
-    row["score_0.9"] = buckets.get("90", 0)
-    row["score_1.0"] = buckets.get("100", 0)
+        "v3_web_assessments_estimated": enterprise_assessments if integration_type == "SCORE" else 0,
+
+        "challenged_sessions": challenged_sessions,
+
+        # Placeholder mantido para evolução futura.
+        # Futuro: calcular sessões desafiadas sem assessment quando houver label/métrica confiável.
+        "challenged_sessions_no_assessments": 0,
+
+        # Placeholder mantido para evolução futura.
+        # Requer uso de Transaction Events / Fraud Prevention.
+        "payment_fraud_assessments": 0,
+
+        "smsd_assessments": smsd_assessments,
+        "errors": errors,
+
+        "error_rate": safe_divide(errors, enterprise_assessments),
+        "challenge_rate": safe_divide(challenged_sessions, enterprise_assessments),
+        "execute_to_assessment_rate": safe_divide(executes, enterprise_assessments),
+
+        "estimated_v2_volume": enterprise_assessments if integration_type in ["CHECKBOX", "INVISIBLE"] else 0,
+        "estimated_v3_volume": enterprise_assessments if integration_type == "SCORE" else 0,
+    })
+
+    ch = challenge_data.get(date_str, {})
+
+    challenge_pageload = int(ch.get("pageload_count", 0) or 0)
+    challenge_nocaptcha = int(ch.get("nocaptcha_count", 0) or 0)
+    challenge_passed = int(ch.get("passed_count", 0) or 0)
+    challenge_failed = int(ch.get("failed_count", 0) or 0)
+
+    row.update({
+        "challenge_pageload": challenge_pageload,
+        "challenge_nocaptcha": challenge_nocaptcha,
+        "challenge_passed": challenge_passed,
+        "challenge_failed": challenge_failed,
+        "challenge_pass_rate": safe_divide(challenge_passed, challenge_pageload),
+        "challenge_failed_rate": safe_divide(challenge_failed, challenge_pageload),
+    })
+
+    for col in SCORE_COLUMNS:
+        bucket_key = col.replace("score_", "").replace(".", "")
+        row[col] = int(score_buckets.get(bucket_key, 0) or 0)
 
     threats = sum(
-        int(buckets.get(s, 0)) for s in ["0", "10", "20", "30", "40"]
+        int(score_buckets.get(s, 0) or 0)
+        for s in ["0", "10", "20", "30", "40"]
     )
 
     legitimate = sum(
-        int(buckets.get(s, 0)) for s in ["50", "60", "70", "80", "90", "100"]
+        int(score_buckets.get(s, 0) or 0)
+        for s in ["50", "60", "70", "80", "90", "100"]
     )
 
-    total_score_evals = sum(
-        int(v) for v in buckets.values()
-    )
+    total_score = threats + legitimate
 
-    row["total_score_evals"] = total_score_evals
-    row["threats_score_0_0_to_0_4"] = threats
-    row["legitimate_score_0_5_to_1_0"] = legitimate
-    row["threat_rate"] = safe_divide(threats, total_score_evals)
-    row["legitimate_rate"] = safe_divide(legitimate, total_score_evals)
-    row["score_low_ratio"] = safe_divide(threats, total_score_evals)
-    row["score_high_ratio"] = safe_divide(legitimate, total_score_evals)
+    row.update({
+        "total_score_evals": total_score,
+        "threats_score_0_0_to_0_4": threats,
+        "legitimate_score_0_5_to_1_0": legitimate,
+        "threat_rate": safe_divide(threats, total_score),
+        "legitimate_rate": safe_divide(legitimate, total_score),
+        "score_low_ratio": safe_divide(threats, total_score),
+        "score_high_ratio": safe_divide(legitimate, total_score),
+    })
+
+    for (d, label), val in defender_metrics.items():
+        if d == date_str:
+            col_name = f"motivo_{sanitize_dynamic_label(label)}"
+            row[col_name] = val
+
+    for (d, label), val in status_metrics.items():
+        if d == date_str and label != "valid":
+            col_name = f"erro_{sanitize_dynamic_label(label)}"
+            row[col_name] = val
 
     return row
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="SegAplic Google reCAPTCHA Enterprise CSV report"
+        description="SegAplic Google reCAPTCHA Enterprise - Relatório de Maturidade"
     )
 
     parser.add_argument(
@@ -574,39 +656,37 @@ def main():
         "--days",
         type=int,
         default=30,
-        help="Days to look back"
-    )
-
-    parser.add_argument(
-        "--output",
-        default="recaptcha_data_export.csv",
-        help="Output CSV file"
+        help="Dias de histórico"
     )
 
     parser.add_argument(
         "--debug",
         action="store_true",
-        help="Enable debug logging"
+        help="Habilita logs em modo debug"
     )
 
     args = parser.parse_args()
 
     setup_logging(args.debug)
 
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    inventory_file = f"recaptcha_inventory_{timestamp}.csv"
+    metrics_file = f"recaptcha_metrics_{timestamp}.csv"
+
+    logging.info("Iniciando extração reCAPTCHA Enterprise / Google Cloud Fraud Defense")
+    logging.info("Projetos: %s", args.projects)
+    logging.info("Período: últimos %s dias", args.days)
+    logging.info("Arquivos de saída: %s | %s", inventory_file, metrics_file)
+
     recaptcha_client = recaptchaenterprise_v1.RecaptchaEnterpriseServiceClient()
     monitoring_client = monitoring_v3.MetricServiceClient()
 
-    all_rows = []
+    inventory_rows = []
+    metrics_rows = []
     dynamic_columns = set()
 
     extraction_timestamp = datetime.now(timezone.utc).isoformat()
     date_range = get_date_range(args.days)
-
-    logging.info("Iniciando extração")
-    logging.info("Projetos: %s", args.projects)
-    logging.info("Período: últimos %s dias", args.days)
-    logging.info("Arquivo de saída: %s", args.output)
-    logging.info("Modelo de saída: 1 linha por chave por dia")
 
     for project_id in args.projects:
         logging.info("Processando projeto: %s", project_id)
@@ -647,6 +727,7 @@ def main():
             )
 
             score_by_date = extract_score_metrics_by_date(sdk_metrics)
+            challenge_by_date = extract_challenge_metrics_by_date(sdk_metrics)
 
             daily_metrics = build_daily_metrics(
                 monitoring_client,
@@ -671,112 +752,181 @@ def main():
                 args.days
             )
 
-            for date_str in date_range:
-                buckets = score_by_date.get(date_str, {})
+            total_assessments_last_days = sum(
+                get_daily_value(daily_metrics, "enterprise_assessments", d)
+                for d in date_range
+            )
 
+            inventory_rows.append({
+                **metadata,
+                "extraction_timestamp": extraction_timestamp,
+                "record_type": "key_inventory",
+                "report_days": args.days,
+                "active_last_days": total_assessments_last_days > 0,
+                "total_assessments_last_days": total_assessments_last_days,
+
+                # Chave considerada órfã quando não possui assessments no período definido por --days.
+                "is_orphan_key": total_assessments_last_days == 0,
+            })
+
+            for date_str in date_range:
                 row = build_daily_row(
-                    metadata,
-                    daily_metrics,
-                    date_str,
-                    buckets,
-                    extraction_timestamp,
-                    args.days
+                    metadata=metadata,
+                    daily_metrics=daily_metrics,
+                    date_str=date_str,
+                    score_buckets=score_by_date.get(date_str, {}),
+                    challenge_data=challenge_by_date,
+                    defender_metrics=defender_metrics,
+                    status_metrics=status_metrics,
+                    extraction_timestamp=extraction_timestamp,
+                    days=args.days,
                 )
 
-                for (d, label), val in defender_metrics.items():
-                    if d == date_str:
-                        sanitized = sanitize_dynamic_label(label)
-                        col_name = f"motivo_{sanitized}"
-                        row[col_name] = val
-                        dynamic_columns.add(col_name)
+                for col in row:
+                    if col.startswith(("motivo_", "erro_")):
+                        dynamic_columns.add(col)
 
-                for (d, label), val in status_metrics.items():
-                    if d == date_str and label != "valid":
-                        sanitized = sanitize_dynamic_label(label)
-                        col_name = f"erro_{sanitized}"
-                        row[col_name] = val
-                        dynamic_columns.add(col_name)
+                metrics_rows.append(row)
 
-                all_rows.append(row)
+    if inventory_rows:
+        inventory_columns = [
+            "extraction_timestamp",
+            "record_type",
+            "report_days",
+            "active_last_days",
+            "total_assessments_last_days",
+            "is_orphan_key",
 
-    if not all_rows:
-        logging.error("Nenhum dado encontrado.")
-        return
+            "project_id",
+            "key_name",
+            "display_name",
+            "site_key",
+            "integration_type",
+            "protection_model",
+            "top_domain",
+            "allowed_domains",
+            "waf_type",
+            "created",
+            "key_age_days",
+            "labels",
+        ]
 
-    base_columns = [
-        "extraction_timestamp",
-        "report_days",
-        "record_type",
-        "date",
+        with open(inventory_file, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(
+                f,
+                fieldnames=inventory_columns,
+                extrasaction="ignore"
+            )
 
-        "project_id",
-        "key_name",
-        "display_name",
-        "site_key",
-        "integration_type",
-        "top_domain",
-        "waf_type",
-        "created",
+            writer.writeheader()
 
-        "consumer_assessments",
-        "enterprise_assessments",
-        "executes",
-        "gcp_assessments",
-        "non_gcp_assessments",
-        "mobile_sdk_assessments",
-        "v2_web_assessments_estimated",
-        "v2_pbc_assessments",
-        "v3_web_assessments_estimated",
-        "challenged_sessions",
-        "challenged_sessions_no_assessments",
-        "payment_fraud_assessments",
-        "smsd_assessments",
-        "errors",
+            for row in inventory_rows:
+                writer.writerow(row)
 
-        "error_rate",
-        "challenge_rate",
-        "execute_to_assessment_rate",
+        logging.info("Inventário gerado: %s (%s chaves)", inventory_file, len(inventory_rows))
 
-        "total_score_evals",
-        "threats_score_0_0_to_0_4",
-        "legitimate_score_0_5_to_1_0",
-        "threat_rate",
-        "legitimate_rate",
-        "score_low_ratio",
-        "score_high_ratio",
-    ]
+    else:
+        logging.warning("Nenhuma linha de inventário gerada.")
 
-    known_dynamic_columns = set(REASON_COLUMNS + ERROR_COLUMNS)
-    extra_dynamic_columns = sorted(dynamic_columns - known_dynamic_columns)
+    if metrics_rows:
+        base_columns = [
+            "extraction_timestamp",
+            "report_days",
+            "record_type",
+            "date",
 
-    final_columns = (
-        base_columns
-        + SCORE_COLUMNS
-        + REASON_COLUMNS
-        + ERROR_COLUMNS
-        + extra_dynamic_columns
-    )
+            "project_id",
+            "key_name",
+            "display_name",
+            "site_key",
+            "integration_type",
+            "protection_model",
+            "top_domain",
+            "allowed_domains",
+            "waf_type",
+            "created",
+            "key_age_days",
+            "labels",
 
-    logging.info("Gravando %s linhas em %s", len(all_rows), args.output)
+            "consumer_assessments",
+            "enterprise_assessments",
+            "total_assessments",
+            "executes",
+            "gcp_assessments",
+            "non_gcp_assessments",
+            "mobile_sdk_assessments",
 
-    with open(args.output, "w", newline="", encoding="utf-8") as csvfile:
-        writer = csv.DictWriter(
-            csvfile,
-            fieldnames=final_columns,
-            extrasaction="ignore"
+            "v2_web_assessments_estimated",
+            "v2_pbc_assessments",
+            "v3_web_assessments_estimated",
+
+            "challenged_sessions",
+            "challenged_sessions_no_assessments",
+
+            "payment_fraud_assessments",
+            "smsd_assessments",
+            "errors",
+
+            "error_rate",
+            "challenge_rate",
+            "execute_to_assessment_rate",
+
+            "estimated_v2_volume",
+            "estimated_v3_volume",
+
+            "challenge_pageload",
+            "challenge_nocaptcha",
+            "challenge_passed",
+            "challenge_failed",
+            "challenge_pass_rate",
+            "challenge_failed_rate",
+
+            "total_score_evals",
+            "threats_score_0_0_to_0_4",
+            "legitimate_score_0_5_to_1_0",
+            "threat_rate",
+            "legitimate_rate",
+            "score_low_ratio",
+            "score_high_ratio",
+        ]
+
+        known_dynamic_columns = set(REASON_COLUMNS + ERROR_COLUMNS)
+        extra_dynamic_columns = sorted(dynamic_columns - known_dynamic_columns)
+
+        final_columns = (
+            base_columns
+            + SCORE_COLUMNS
+            + REASON_COLUMNS
+            + ERROR_COLUMNS
+            + extra_dynamic_columns
         )
 
-        writer.writeheader()
+        with open(metrics_file, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(
+                f,
+                fieldnames=final_columns,
+                extrasaction="ignore"
+            )
 
-        for row in all_rows:
-            for column in final_columns:
-                if column not in row:
-                    row[column] = 0
+            writer.writeheader()
 
-            writer.writerow(row)
+            for row in metrics_rows:
+                for col in final_columns:
+                    if col not in row:
+                        row[col] = 0
 
-    logging.info("CSV gerado com sucesso: %s", args.output)
-    logging.info("Total de linhas: %s", len(all_rows))
+                writer.writerow(row)
+
+        logging.info("Métricas diárias geradas: %s (%s linhas)", metrics_file, len(metrics_rows))
+
+    else:
+        logging.warning("Nenhuma linha de métrica diária gerada.")
+
+    logging.info("Processo finalizado.")
+    logging.info("Projetos processados: %s", len(args.projects))
+    logging.info("Total de chaves: %s", len(inventory_rows))
+    logging.info("Total de linhas de métricas: %s", len(metrics_rows))
+    logging.info("Colunas dinâmicas detectadas: %s", len(dynamic_columns))
 
 
 if __name__ == "__main__":
