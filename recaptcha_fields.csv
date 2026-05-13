@@ -1,0 +1,266 @@
+Seção Campo (path) / Enum Value	Tipo	Descrição (oficial/técnica)	Observações / Quando aparece
+Key key.name	string	Nome completo do recurso da chave (projects/{project}/keys/{key})	Sempre (output only)
+Key key.displayName	string	Nome amigável configurado para a chave	Sempre
+Key key.createTime	timestamp	Data/hora RFC3339 de criação da chave	Sempre
+Key key.labels	map string	Mecanismo de labels para governança corporativa	Opcional
+Key key.testingOptions.testingScore	float	Score fixo retornado em modo de testes	Quando testingOptions ativo
+Key key.testingOptions.testingChallenge	enum	Modo de challenge simulado para ambientes de QA	Quando testingOptions ativo
+Key key.webSettings.allowAllDomains	boolean	Permite uso da chave em qualquer domínio	Alto risco de segurança
+Key key.webSettings.allowedDomains[]	array string	Lista de domínios autorizados para uso da chave	Web keys
+Key key.webSettings.challengeSecurityPreference	enum	Nível de agressividade do mecanismo de challenge	Web keys
+Key key.webSettings.integrationType	enum	Tipo de integração da chave web (SCORE/CHECKBOX/INVISIBLE)	Web keys
+Key key.androidSettings.allowedPackageNames[]	array string	Lista de package names Android permitidos	Android keys
+Key key.androidSettings.supportNonGoogleAppStoreDistribution	boolean	Permite distribuição fora da Google Play	Android keys
+Key key.iosSettings.allowedBundleIds[]	array string	Lista de bundle IDs iOS autorizados	iOS keys
+Key key.wafSettings.wafService	enum	Serviço WAF associado à integração	WAF integration
+Key key.wafSettings.wafFeature	enum	Modo/recurso habilitado no WAF	WAF integration
+Key key.expressSettings	object	Configurações de reCAPTCHA Express	Express keys
+Key Enum Challenge Security Preference USABILITY	enum_val	Prioriza experiência do usuário	Interno de challengeSecurityPreference
+Key Enum Challenge Security Preference BALANCE	enum_val	Balanceia usabilidade e segurança	Interno de challengeSecurityPreference
+Key Enum Challenge Security Preference SECURITY	enum_val	Prioriza bloqueio e proteção máxima	Interno de challengeSecurityPreference
+Key Enum Integration Type SCORE	enum_val	Integração baseada em score invisível	Interno de integrationType
+Key Enum Integration Type CHECKBOX	enum_val	Integração clássica com checkbox	Interno de integrationType
+Key Enum Integration Type INVISIBLE	enum_val	Integração invisível baseada em challenge	Interno de integrationType
+Key Enum WAF Service CLOUD_ARMOR	enum_val	Integração com Google Cloud Armor	Interno de wafService
+Key Enum WAF Service CLOUDFLARE	enum_val	Integração com Cloudflare WAF	Interno de wafService
+Key Enum WAF Service FASTLY	enum_val	Integração com Fastly	Interno de wafService
+Assessment name	string	Nome completo do recurso da avaliação (projects/{project}/assessments/{assessment})	Sempre (output only)
+Assessment event.token	string	Token de resposta gerado pelo cliente no frontend (g-recaptcha-response)	Obrigatório
+Assessment event.siteKey	string	Chave de site pública vinculada à aplicação	Obrigatório
+Assessment event.userAgent	string	User-Agent original obtido do navegador do cliente	Opcional (enriquecido automaticamente)
+Assessment event.userIpAddress	string	Endereço IP público (IPv4 ou IPv6) do usuário final	Opcional (altamente recomendado)
+Assessment event.expectedAction	string	String da ação de contexto esperada para validação no backend	Recomendado
+Assessment event.hashedAccountId	string	ID de conta do usuário mascarado em base64 (Formato legado)	Deprecated (use userInfo)
+Assessment event.userInfo.accountId	string	Identificador exclusivo persistente do usuário no seu sistema	Recomendado para Account Defender
+Assessment event.userInfo.email	string	Endereço de e-mail associado ao usuário que disparou o evento	Recomendado
+Assessment event.userInfo.emailVerified	boolean	Flag indicando se o e-mail passou por validação prévia (MFA/OTP)	Recomendado
+Assessment event.userInfo.phoneNumber	string	Número de telefone do usuário no formato internacional E.164	Recomendado
+Assessment event.userInfo.phoneVerified	boolean	Flag indicando se o número de telefone foi validado via SMS OTP	Recomendado
+Assessment event.userInfo.creationMs	int64	Timestamp do momento de criação da conta em milissegundos unix	Recomendado
+Assessment event.userInfo.createAccountTime	timestamp	Timestamp estruturado RFC3339 de criação da conta do usuário	Substitui o creationMs
+Assessment event.express	boolean	Sinalizador se a requisição utilizou uma chave reCAPTCHA Express	Quando usando chaves sem token
+Assessment event.requestedUri	string	URI ou rota completa do endpoint que o usuário tentou acessar	Opcional
+Assessment event.headers[]	array string	Lista de cabeçalhos HTTP adicionais enviados pelo servidor web	Opcional (enriquecimento avançado)
+Assessment event.ja3	string	Assinatura/Fingerprint criptográfica JA3 do protocolo TLS/SSL	Automático
+Assessment event.ja4	string	Assinatura/Fingerprint moderna JA4 do protocolo de rede TLS	Automático
+Assessment event.wafTokenAssessment	boolean	Flag para ativar a validação do token integrado ao WAF	Quando integrado ao WAF
+Assessment event.firewallPolicyEvaluation	boolean	Define se as regras de firewall vinculadas devem ser computadas	Quando políticas WAF estão ativas
+Assessment event.fraudPrevention	enum	Parâmetro de configuração do comportamento do Fraud Prevention	Módulo de e-commerce opcional
+Assessment event.transactionData	object	Nó raiz com dados detalhados da transação de pagamento	Obrigatório para Fraud Prevention
+Assessment event.transactionData.transactionId	string	ID único global gerado para identificar o pedido/venda	Dentro de transactionData
+Assessment event.transactionData.paymentMethod	string	String descritiva do método de pagamento (credit_card, pix, etc)	Dentro de transactionData
+Assessment event.transactionData.cardBin	string	O Bank Identification Number (6 a 8 primeiros dígitos do cartão)	Dentro de transactionData
+Assessment event.transactionData.cardLastFour	string	Os quatro últimos dígitos do cartão de crédito utilizado	Dentro de transactionData
+Assessment event.transactionData.value	double	Montante monetário bruto total cobrado na transação	Dentro de transactionData
+Assessment event.transactionData.currencyCode	string	Código monetário internacional de 3 letras baseado na ISO 4217	Dentro de transactionData
+Assessment event.transactionData.shippingValue	double	Custo total do frete ou taxas de entrega da transação	Dentro de transactionData
+Assessment event.transactionData.billingAddress	object	Estrutura contendo as propriedades de faturamento do cartão	Dentro de transactionData
+Assessment event.transactionData.billingAddress.recipientName	string	Nome do titular ou pessoa que receberá a cobrança	Dentro de billingAddress
+Assessment event.transactionData.billingAddress.address[]	array string	Linhas de texto de endereço de cobrança (Logradouro, número)	Dentro de billingAddress
+Assessment event.transactionData.billingAddress.locality	string	Nome da cidade/município cadastrado no faturamento	Dentro de billingAddress
+Assessment event.transactionData.billingAddress.administrativeArea	string	Estado, unidade federativa ou província de faturamento	Dentro de billingAddress
+Assessment event.transactionData.billingAddress.postalCode	string	Código postal ou CEP associado ao faturamento	Dentro de billingAddress
+Assessment event.transactionData.billingAddress.regionCode	string	Código do país em duas letras padrão ISO 3166-1 alpha-2	Dentro de billingAddress
+Assessment event.transactionData.shippingAddress	object	Estrutura contendo o endereço físico de entrega do pedido	Dentro de transactionData
+Assessment event.transactionData.shippingAddress.recipientName	string	Nome da pessoa que receberá a entrega física das mercadorias	Dentro de shippingAddress
+Assessment event.transactionData.shippingAddress.address[]	array string	Linhas de texto estruturadas do endereço de destino físico	Dentro de shippingAddress
+Assessment event.transactionData.shippingAddress.locality	string	Cidade ou região metropolitana de entrega	Dentro de shippingAddress
+Assessment event.transactionData.shippingAddress.administrativeArea	string	Estado ou província de destino da mercadoria	Dentro de shippingAddress
+Assessment event.transactionData.shippingAddress.postalCode	string	CEP ou código postal do local de entrega	Dentro de shippingAddress
+Assessment event.transactionData.shippingAddress.regionCode	string	Código do país de destino final padrão ISO 3166-1 alpha-2	Dentro de shippingAddress
+Assessment event.transactionData.user	object	Objeto que encapsula metadados adicionais do comprador	Dentro de transactionData
+Assessment event.transactionData.user.accountId	string	ID de conta exclusivo do comprador dentro da loja	Dentro de user
+Assessment event.transactionData.user.creationMs	int64	Data de criação cadastral do comprador (Epoch MS)	Dentro de user
+Assessment event.transactionData.merchants[]	array object	Array contendo os vendedores envolvidos (Marketplace)	Dentro de transactionData
+Assessment event.transactionData.merchants[].merchantId	string	Código identificador único do seller/vendedor parceiro	Dentro de merchants[]
+Assessment event.transactionData.items[]	array object	Lista de mercadorias ou serviços contidos no carrinho	Dentro de transactionData
+Assessment event.transactionData.items[].itemId	string	ID interno/SKU do item comercializado	Dentro de items[]
+Assessment event.transactionData.items[].name	string	Nome textual legível do produto vendido	Dentro de items[]
+Assessment event.transactionData.items[].category	string	Categoria comercial do produto	Dentro de items[]
+Assessment event.transactionData.items[].sku	string	SKU comercial do produto	Dentro de items[]
+Assessment event.transactionData.items[].value / unitPrice	double	Valor financeiro unitário do produto	Dentro de items[]
+Assessment event.transactionData.items[].quantity	int64	Quantidade total comprada do item específico	Dentro de items[]
+Assessment event.transactionData.items[].merchantId	string	Identificador do vendedor dono do produto específico	Dentro de items[]
+Assessment event.transactionData.items[].digitalGoods	boolean	Indica se o item é digital	Dentro de items[]
+Assessment event.transactionData.items[].deliveryType	string	Tipo de entrega (physical/digital/pickup)	Dentro de items[]
+Assessment event.transactionData.gatewayInfo	object	Objeto de dados técnicos retornados pelo intermediador/adquirente	Dentro de transactionData
+Assessment event.transactionData.gatewayInfo.name	string	Nome comercial do gateway parceiro de pagamento	Dentro de gatewayInfo
+Assessment event.transactionData.gatewayInfo.gatewayResponseCode	string	Código string puro retornado no processador de pagamento	Dentro de gatewayInfo
+Assessment event.transactionData.gatewayInfo.avsResponseCode	string	Resultado da checagem de endereço junto ao banco (AVS)	Dentro de gatewayInfo
+Assessment event.transactionData.gatewayInfo.cvvResponseCode	string	Status de aprovação do código de segurança (CVV)	Dentro de gatewayInfo
+Assessment riskAnalysis.score	float	Métrica de risco central de automação (0.0 a 1.0)	Sempre retornado
+Assessment riskAnalysis.reasons	array enum	Motivos de classificação de risco (Padrões de automação)	Quando score < 1.0
+Risk Reason AUTOMATED_USER_AGENT_CONGESTION	enum_val	Detecção de tráfego massivo com o mesmo User-Agent padrão	Interno de riskAnalysis.reasons
+Risk Reason AUTOMATED_USER_AGENT_LOW_CONFIDENCE	enum_val	O User-Agent recebido falhou em testes de autenticidade	Interno de riskAnalysis.reasons
+Risk Reason BEHAVIORAL_AUTOMATION	enum_val	Telemetria do cliente indica ausência de movimentos humanos	Interno de riskAnalysis.reasons
+Risk Reason BROWSER_CONGESTION	enum_val	Volume anormal de requisições de um único browser id	Interno de riskAnalysis.reasons
+Risk Reason LOW_SCORE_BY_SITE_SPECIFIC_MODEL	enum_val	O modelo customizado do seu domínio barrou a requisição	Interno de riskAnalysis.reasons
+Risk Reason SUSPICIOUS_SEEN_BEFORE	enum_val	Padrões idênticos operados anteriormente por redes criminosas	Interno de riskAnalysis.reasons
+Risk Reason TOO_MUCH_TRAFFIC	enum_val	Volume de tráfego geral da origem está acima do aceitável	Interno de riskAnalysis.reasons
+Risk Reason UNEXPECTED_ENVIRONMENT	enum_val	Ambiente host de execução é inválido ou emulado	Interno de riskAnalysis.reasons
+Risk Reason UNEXPECTED_USAGE_PATTERNS	enum_val	O fluxo de navegação desvia drasticamente do padrão do site	Interno de riskAnalysis.reasons
+Risk Reason AUTOMATION	enum_val	Comportamento automatizado detectado pelo modelo de IA	Interno de riskAnalysis.reasons
+Risk Reason LOW_CONFIDENCE_SCORE	enum_val	Baixa confiança estatística no tráfego analisado	Interno de riskAnalysis.reasons
+Risk Reason SUSPECTED_CARDING	enum_val	Indícios de teste massivo de cartões de crédito	Interno de riskAnalysis.reasons
+Risk Reason SUSPECTED_CHARGEBACK	enum_val	Padrão compatível com histórico de chargeback	Interno de riskAnalysis.reasons
+Risk Reason SUSPECTED_BOT_TRAFFIC	enum_val	Telemetria compatível com bot automatizado	Interno de riskAnalysis.reasons
+Risk Reason SUSPECTED_SCRAPING	enum_val	Comportamento associado a raspagem automatizada	Interno de riskAnalysis.reasons
+Risk Reason SUSPECTED_ACCOUNT_ABUSE	enum_val	Indícios de abuso ou exploração de contas	Interno de riskAnalysis.reasons
+Assessment riskAnalysis.extendedVerdictReasons[]	array string	Explicações textuais avançadas do motor de IA	Opcional
+Assessment tokenProperties.valid	boolean	Status criptográfico e temporal de integridade do token	Sempre retornado
+Assessment tokenProperties.invalidReason	enum	String do motivo da falha do token do cliente	Quando valid = false
+Invalid Reason EXPIRED	enum_val	O token expirou por ter ultrapassado a janela de 2 minutos	Interno de invalidReason
+Invalid Reason DUPLICATE	enum_val	O token já foi validado e consumido (Ataque de Replay)	Interno de invalidReason
+Invalid Reason SITEKEY_MISMATCH	enum_val	A sitekey usada para gerar o token não bate com a do projeto	Interno de invalidReason
+Invalid Reason ACTION_MISMATCH	enum_val	A ação executada no client diverge da esperada no server	Interno de invalidReason
+Invalid Reason INVALID_CONTEXT	enum_val	Parâmetros contextuais do navegador falharam no token	Interno de invalidReason
+Assessment tokenProperties.invalidReasonDetails	string	Detalhes avançados do motivo de invalidação do token	Opcional
+Assessment tokenProperties.action	string	Action efetivamente embutida no token	Sempre retornado
+Assessment tokenProperties.createTime	timestamp	Timestamp RFC3339 de quando o script gerou o token	Sempre retornado
+Assessment tokenProperties.createTimeAgeSeconds	int64	Idade derivada do token em segundos	Campo derivado
+Assessment tokenProperties.hostname	string	Domínio/URL exato onde o script do reCAPTCHA rodou	Retornado em chaves Web
+Assessment tokenProperties.androidPackageName	string	ID de pacote único do aplicativo Android gerador do token	Retornado em chaves Android
+Assessment tokenProperties.iosBundleId	string	Bundle ID único do aplicativo iOS gerador do token	Retornado em chaves iOS
+Assessment tokenProperties.isExpired	boolean	Flag derivada indicando expiração do token	Campo derivado
+Assessment tokenProperties.isReplaySuspected	boolean	Flag derivada indicando possível replay attack	Campo derivado
+Assessment accountDefenderAssessment.labels[]	array enum	Sinais analíticos de anomalias em contas de usuários	Quando accountId é enviado
+Defender Label PROFILE_MATCH	enum_val	O login e telemetria estão em total conformidade com o histórico	Interno de defender labels
+Defender Label SUSPICIOUS_SIGN_IN_LOCATION	enum_val	Login realizado a partir de geolocalização impossível/atípica	Interno de defender labels
+Defender Label SUSPICIOUS_DEVICE	enum_val	Aparelho ou sessão nunca antes vinculada à conta do usuário	Interno de defender labels
+Defender Label NEW_ACCOUNT_CREATION_SPAM	enum_val	Comportamento associado à criação massiva de contas (Fake)	Interno de defender labels
+Defender Label ACCOUNT_TAKEOVER_BIOMETRIC_SUSPICIOUS	enum_val	Métricas comportamentais alteradas durante a sessão ativa	Interno de defender labels
+Assessment accountDefenderAssessment.accountTakeoverVerdict	object	Objeto consolidado de risco de invasão de conta (ATO)	Account Defender ativo
+Assessment accountDefenderAssessment.accountTakeoverVerdict.risk	float	Pontuação específica indicando o nível de risco de roubo (0 a 1)	Dentro de accountTakeoverVerdict
+Assessment accountDefenderAssessment.accountTakeoverVerdict.reasons[]	array enum	Motivos vinculados ao veredito de invasão detectado	Dentro de accountTakeoverVerdict
+Assessment accountDefenderAssessment.profileMatch	object	Veredito de compatibilidade histórica da conta	Account Defender
+Assessment accountDefenderAssessment.suspiciousAccountCreation	object	Indicadores de criação fraudulenta de contas	Account Defender
+Assessment accountDefenderAssessment.relatedAccounts[]	array string	Contas relacionadas detectadas pelo motor de IA	Account Defender
+Assessment accountVerification	object	Estrutura de dados de validação de fluxo de MFA do Google	Quando usado
+Assessment privatePasswordLeakVerification	object	Estrutura de validação criptográfica de credenciais expostas	Quando enviado lookupHashPrefix
+Assessment privatePasswordLeakVerification.lookupHashPrefix	string	Pedaço inicial do hash SHA-256 da senha enviada pelo app	Dentro de privatePasswordLeakVerification
+Assessment privatePasswordLeakVerification.encryptedUserCredentialsHash	string	Hash completo e cifrado de segurança da credencial avaliada	Dentro de privatePasswordLeakVerification
+Assessment privatePasswordLeakVerification.encryptedLeakMatchPrefixes[]	array string	Prefixos de vazamento criptografados retornados pelo Google	Dentro de privatePasswordLeakVerification
+Assessment privatePasswordLeakVerification.credentialsLeaked	boolean	Indica se a credencial foi encontrada em vazamentos	Password Defense
+Assessment privatePasswordLeakVerification.credentialsReused	boolean	Indica reutilização de credenciais comprometidas	Password Defense
+Assessment privatePasswordLeakVerification.compromiseLikelihood	float	Probabilidade estimada de comprometimento da credencial	Password Defense
+Assessment privatePasswordLeakVerification.breachSourceCount	int32	Quantidade de vazamentos relacionados à credencial	Password Defense
+Assessment firewallPolicyAssessment	object	Objeto contendo metadados de regras recomendadas de WAF	Quando firewallPolicyEvaluation = true
+Assessment firewallPolicyAssessment.error	object	Mensagem de falha interna no motor de processamento do WAF	Dentro de firewallPolicyAssessment
+Assessment firewallPolicyAssessment.firewallPolicy	string	Identificador ou nome da regra aplicada no Firewall/WAF	Dentro de firewallPolicyAssessment
+Assessment firewallPolicyAssessment.firewallAction	string	Ação aplicada pelo WAF (allow/block/challenge)	WAF integration
+Assessment firewallPolicyAssessment.firewallRuleName	string	Nome da regra do firewall aplicada	WAF integration
+Assessment firewallPolicyAssessment.firewallDecision	string	Decisão consolidada do WAF	WAF integration
+Assessment firewallPolicyAssessment.rateLimitTriggered	boolean	Indica acionamento de limitação de taxa	WAF integration
+Assessment firewallPolicyAssessment.adaptiveProtection	boolean	Indica uso de proteção adaptativa automática	WAF integration
+Assessment fraudPreventionAssessment	object	Resultados do motor analítico financeiro contra estornos	Quando transactionData enviado
+Assessment fraudPreventionAssessment.transactionRisk	float	Score agregado de risco financeiro comercial (0.0 a 1.0)	Módulo Fraud Prevention
+Assessment fraudPreventionAssessment.riskReasons[]	array enum	Lista de motivos financeiros mapeados na transação	Módulo Fraud Prevention
+Fraud Risk Reason HIGH_TRANSACTION_VELOCITY	enum_val	Disparos excessivos de compras em curtíssimos intervalos	Dentro de riskReasons[]
+Fraud Risk Reason EXCESSIVE_ENUMERATION_PATTERN	enum_val	Comportamento de brute-force mudando dados finos do checkout	Dentro de riskReasons[]
+Fraud Risk Reason SUSPICIOUS_BILLING_SHIPPING_MISMATCH	enum_val	Divergência de alto risco entre faturamento e entrega	Dentro de riskReasons[]
+Assessment fraudPreventionAssessment.stolenInstrumentVerdict	object	Veredito associado ao roubo e clonagem de cartões	Módulo Fraud Prevention
+Assessment fraudPreventionAssessment.stolenInstrumentVerdict.risk	float	Score de probabilidade de o cartão ser roubado (0 a 1)	Dentro de stolenInstrumentVerdict
+Assessment fraudPreventionAssessment.cardTestingVerdict	object	Veredito de ataques de teste de cartão em lote (Carding)	Módulo Fraud Prevention
+Assessment fraudPreventionAssessment.cardTestingVerdict.risk	float	Score de risco para a prática de validação massiva de cartões	Dentro de cardTestingVerdict
+Assessment fraudPreventionAssessment.behavioralTrustVerdict	object	Métrica de reputação histórica do navegador comprador	Módulo Fraud Prevention
+Assessment fraudPreventionAssessment.behavioralTrustVerdict.trust	float	Confiança comportamental (Valores altos indicam legitimidade)	Dentro de behavioralTrustVerdict
+Assessment fraudSignals	object	Nó com telemetria detalhada de fraude de e-commerce	Módulo Fraud Prevention
+Assessment fraudSignals.userSignals	object	Indicadores comportamentais agregados à conta no lojista	Dentro de fraudSignals
+Assessment fraudSignals.userSignals.isNewAccount	boolean	Mapeia se a conta que está comprando foi criada no dia	Dentro de userSignals
+Assessment fraudSignals.userSignals.accountAgeDays	int32	Idade numérica consolidada da conta do usuário em dias	Dentro de userSignals
+Assessment fraudSignals.cardSignals	object	Sinais do cartão processados pela IA de risco do Google	Dentro de fraudSignals
+Assessment fraudSignals.cardSignals.cardBin	string	O BIN mapeado e validado do cartão de crédito	Dentro de cardSignals
+Assessment fraudSignals.cardSignals.isCommercialCard	boolean	Retorna se o cartão possui finalidade corporativa/empresarial	Dentro de cardSignals
+Assessment phoneFraudAssessment	object	Objeto de proteção de APIs de SMS e Engenharia Social	Phone + site key ativos
+Assessment phoneFraudAssessment.smsTollFraudVerdict.risk	float	Score de certeza de ataque de tarifação reversa de SMS (0 a 1)	Módulo Phone Fraud
+Assessment phoneFraudAssessment.smsTollFraudVerdict.reasons[]	array enum	Razões associadas à fraude de telecomunicações detectada	Dentro de phoneFraudAssessment
+Phone Fraud Reason FLY_BY_PHONE	enum_val	Uso de números virtuais voláteis (VoIP descartáveis)	Dentro de smsTollFraudVerdict.reasons
+Phone Fraud Reason SMS_PUMPING_VELOCITY	enum_val	Envios de SMS em lote gerando tráfego premium fraudulento	Dentro de smsTollFraudVerdict.reasons
+Assessment phoneFraudAssessment.phoneCountry	string	País associado ao número de telefone avaliado	Phone Fraud
+Assessment phoneFraudAssessment.phoneType	string	Classificação do número telefônico (mobile/fixo/VoIP)	Phone Fraud
+Assessment phoneFraudAssessment.voipDetected	boolean	Indica uso de número VoIP descartável	Phone Fraud
+Assessment phoneFraudAssessment.disposableNumber	boolean	Indica número temporário/descartável	Phone Fraud
+Assessment phoneFraudAssessment.smsVelocity	int32	Quantidade de SMS disparados em janela temporal	Phone Fraud
+Assessment phoneFraudAssessment.smsCountryMismatch	boolean	País do telefone diverge do contexto da sessão	Phone Fraud
+Assessment assessmentEnvironment	object	Metadados técnicos sobre o ecossistema do seu backend	Opcional
+Assessment assessmentEnvironment.client	string	String descritiva do SDK que invocou o reCAPTCHA (ex: java-sdk)	Dentro de assessmentEnvironment
+Assessment assessmentEnvironment.version	string	Versão de build exata da biblioteca do Google no seu servidor	Dentro de assessmentEnvironment
+Assessment annotations	object	Objeto com correções retroativas enviadas pela sua equipe	Opcional (API complementar)
+Assessment annotations.reasons[]	array enum	Lista de marcações pós-fato informadas pelo seu time de SOC	Dentro do objeto annotations
+Annotation Reason CHARGEBACK	enum_val	Você informou ao Google que essa transação sofreu estorno fraudulento	Dentro de annotations.reasons[]
+Annotation Reason LEGITIMATE	enum_val	Você informou que o usuário era legítimo (Falso Positivo corrigido)	Dentro de annotations.reasons[]
+Annotation Reason FRAUDULENT	enum_val	Anotação manual indicando que o evento era um ataque confirmado	Dentro de annotations.reasons[]
+Cloud Logging log.trace	string	Trace ID distribuído da requisição	Cloud Logging export
+Cloud Logging log.spanId	string	Span ID da operação distribuída	Cloud Logging export
+Cloud Logging log.requestId	string	Identificador único da requisição	Cloud Logging export
+Cloud Logging log.geoCountry	string	País inferido via geolocalização de IP	Cloud Logging export
+Cloud Logging log.geoRegion	string	Estado/região inferido via geolocalização	Cloud Logging export
+Cloud Logging log.geoCity	string	Cidade inferida via geolocalização	Cloud Logging export
+Cloud Logging log.asn	string	Sistema autônomo (ASN) associado ao IP	Cloud Logging export
+Cloud Logging log.ipReputation	string	Reputação do IP calculada pelo ecossistema Google	Cloud Logging export
+Cloud Logging log.tlsVersion	string	Versão TLS negociada na sessão	Cloud Logging export
+Cloud Logging log.cipherSuite	string	Cipher suite utilizada na conexão TLS	Cloud Logging export
+Cloud Logging log.httpMethod	string	Método HTTP da requisição	Cloud Logging export
+Cloud Logging log.referrer	string	HTTP Referrer recebido	Cloud Logging export
+Cloud Logging log.origin	string	Cabeçalho Origin enviado pelo navegador	Cloud Logging export
+Cloud Logging log.edgeLocation	string	Localidade do edge Google que processou a requisição	Cloud Logging export
+Derived Analytics derived.avgScore	float	Média de score consolidada por aplicação/período	Campo derivado
+Derived Analytics derived.medianScore	float	Mediana estatística de score	Campo derivado
+Derived Analytics derived.p95Score	float	Percentil 95 dos scores	Campo derivado
+Derived Analytics derived.scoreStdDev	float	Desvio padrão estatístico dos scores	Campo derivado
+Derived Analytics derived.lowScoreRate	float	Taxa percentual de scores abaixo do threshold	Campo derivado
+Derived Analytics derived.challengeRate	float	Taxa percentual de challenges aplicados	Campo derivado
+Derived Analytics derived.challengeSuccessRate	float	Taxa de sucesso após challenge	Campo derivado
+Derived Analytics derived.challengeAbandonmentRate	float	Taxa de abandono após challenge	Campo derivado
+Derived Analytics derived.invalidTokenRate	float	Taxa de tokens inválidos	Campo derivado
+Derived Analytics derived.replayAttackRate	float	Taxa estimada de replay attacks	Campo derivado
+Derived Analytics derived.actionMismatchRate	float	Taxa de divergência de actions	Campo derivado
+Derived Analytics derived.expiredTokenRate	float	Taxa de expiração de tokens	Campo derivado
+Derived Analytics derived.requestsPerIp	float	Quantidade média de requests por IP	Campo derivado
+Derived Analytics derived.requestsPerUserAgent	float	Quantidade média de requests por User-Agent	Campo derivado
+Derived Analytics derived.ipEntropy	float	Entropia estatística de IPs	Campo derivado
+Derived Analytics derived.actionEntropy	float	Entropia estatística das actions	Campo derivado
+Derived Analytics derived.trafficSpikeDetected	boolean	Detecção de pico anômalo de tráfego	Campo derivado
+Governance governance.applicationName	string	Nome corporativo da aplicação	Campo enriquecido
+Governance governance.squadOwner	string	Time/squad responsável pela integração	Campo enriquecido
+Governance governance.businessUnit	string	Unidade de negócio responsável	Campo enriquecido
+Governance governance.environment	string	Ambiente da aplicação (prod/dev/hml)	Campo enriquecido
+Governance governance.internetExposed	boolean	Indica se a aplicação é exposta externamente	Campo enriquecido
+Governance governance.criticality	string	Classificação de criticidade AppSec governance	Campo enriquecido
+Governance governance.paymentFlow	boolean	Indica se participa de jornada financeira	Campo enriquecido
+Governance governance.authenticationFlow	boolean	Indica se participa de autenticação	Campo enriquecido
+Governance governance.mobileApplication	boolean	Indica se a aplicação é mobile	Campo enriquecido
+Governance governance.publicApi	boolean	Indica exposição via API pública	Campo enriquecido
+Governance governance.wafProtected	boolean	Indica proteção adicional via WAF	Campo enriquecido
+Misuse Detection misuse.sharedKeyMultipleDomains	boolean	Mesma key utilizada em múltiplos domínios	Campo derivado
+Misuse Detection misuse.wildcardDomain	boolean	Uso de wildcard excessivo em allowedDomains	Campo derivado
+Misuse Detection misuse.orphanKey	boolean	Key sem uso recente	Campo derivado
+Misuse Detection misuse.inactiveKey	boolean	Key inativa por longo período	Campo derivado
+Misuse Detection misuse.lowVolumeKey	boolean	Key com volumetria extremamente baixa	Campo derivado
+Misuse Detection misuse.scoreNotUsed	boolean	Assessment realizado sem consumo do score	Campo derivado
+Misuse Detection misuse.challengeNotEnforced	boolean	Challenge emitido porém ignorado pela aplicação	Campo derivado
+Misuse Detection misuse.assessmentWithoutAction	boolean	Assessment enviado sem action definida	Campo derivado
+Misuse Detection misuse.actionGenericName	boolean	Action usando nomes genéricos inválidos	Campo derivado
+Misuse Detection misuse.frontendOnlyValidation	boolean	Validação apenas frontend sem backend	Campo derivado
+Misuse Detection misuse.missingBackendAssessment	boolean	Execução sem validação server-side	Campo derivado
+Maturity maturity.recaptchaEnabled	boolean	Aplicação possui reCAPTCHA habilitado	Campo derivado
+Maturity maturity.assessmentEnabled	boolean	Aplicação realiza assessments server-side	Campo derivado
+Maturity maturity.backendValidationEnabled	boolean	Backend valida token corretamente	Campo derivado
+Maturity maturity.scoreUsedInBusinessRule	boolean	Score é utilizado em regra de negócio	Campo derivado
+Maturity maturity.adaptiveChallengeEnabled	boolean	Challenge adaptativo habilitado	Campo derivado
+Maturity maturity.accountDefenderEnabled	boolean	Account Defender habilitado	Campo derivado
+Maturity maturity.fraudPreventionEnabled	boolean	Fraud Prevention habilitado	Campo derivado
+Maturity maturity.passwordDefenseEnabled	boolean	Password Defense habilitado	Campo derivado
+Maturity maturity.monitoringEnabled	boolean	Integração com observabilidade habilitada	Campo derivado
+Maturity maturity.loggingEnabled	boolean	Exportação de logs habilitada	Campo derivado
+Maturity maturity.annotationsEnabled	boolean	Feedback annotations habilitado	Campo derivado
+Operational Metrics metrics.assessmentsPerMinute	float	Quantidade de assessments por minuto	Cloud Monitoring
+Operational Metrics metrics.executeCalls	float	Quantidade de chamadas execute()	Cloud Monitoring
+Operational Metrics metrics.apiErrors	float	Quantidade de erros de API	Cloud Monitoring
+Operational Metrics metrics.quotaUsage	float	Consumo atual de quota GCP Monitoring	Cloud Monitoring
+Operational Metrics metrics.quotaRemaining	float	Quota remanescente disponível	Cloud Monitoring
+Operational Metrics metrics.latencyP50	float	Latência percentil 50 da API	Cloud Monitoring
+Operational Metrics metrics.latencyP95	float	Latência percentil 95 da API	Cloud Monitoring
+Operational Metrics metrics.latencyP99	float	Latência percentil 99 da API	Cloud Monitoring
+Operational Metrics metrics.backendErrorRate	float	Taxa de erro do backend integrador	Campo derivado
+Operational Metrics metrics.sdkErrorRate	float	Taxa de erro da SDK do cliente	Campo derivado
